@@ -68,6 +68,7 @@ class PresenceDetectorWindow(QtWidgets.QWidget):
         self.detector = detector
         self.start_time = None
         self.sample_count = 0
+        self.num_subcarriers = None
 
         self.times = deque(maxlen=args.max_samples)
         self.scores = deque(maxlen=args.max_samples)
@@ -104,6 +105,7 @@ class PresenceDetectorWindow(QtWidgets.QWidget):
 
     def update(self) -> None:
         got_sample = False
+        got_error = False
         latest_result = None
         latest_sample = None
 
@@ -114,12 +116,21 @@ class PresenceDetectorWindow(QtWidgets.QWidget):
                 break
 
             if kind == "error":
+                got_error = True
                 self.status_label.setText(f"Error: {payload}")
+                self.status_label.setStyleSheet("color: #B42318;")
                 print(f"Error: {payload}", file=sys.stderr)
                 continue
 
             elapsed, sample = payload
             amplitude = iq_to_amplitude(sample.iq_values)
+
+            if self.num_subcarriers is None:
+                self.num_subcarriers = len(amplitude)
+
+            if len(amplitude) != self.num_subcarriers:
+                continue
+
             result = self.detector.update(amplitude)
 
             if self.start_time is None:
@@ -135,17 +146,18 @@ class PresenceDetectorWindow(QtWidgets.QWidget):
         if not got_sample or not self.times:
             return
 
-        if latest_result["motion"]:
-            self.status_label.setText("MOTION DETECTED")
-            self.status_label.setStyleSheet("color: #B42318;")
-        else:
-            self.status_label.setText("NO MOTION")
-            self.status_label.setStyleSheet("color: #166534;")
+        if not got_error:
+            if latest_result["motion"]:
+                self.status_label.setText("MOTION DETECTED")
+                self.status_label.setStyleSheet("color: #B42318;")
+            else:
+                self.status_label.setText("NO MOTION")
+                self.status_label.setStyleSheet("color: #166534;")
 
-        self.detail_label.setText(
-            f"samples {self.sample_count} | score {latest_result['score']:.3f} | "
-            f"threshold {self.args.threshold:.3f} | rssi {latest_sample.rssi} dBm"
-        )
+            self.detail_label.setText(
+                f"samples {self.sample_count} | score {latest_result['score']:.3f} | "
+                f"threshold {self.args.threshold:.3f} | rssi {latest_sample.rssi} dBm"
+            )
 
         times_array = np.fromiter(self.times, dtype=np.float32, count=len(self.times))
         scores_array = np.fromiter(self.scores, dtype=np.float32, count=len(self.scores))

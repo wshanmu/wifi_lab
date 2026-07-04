@@ -95,7 +95,11 @@ def parse_log_line(line: str) -> Optional[tuple[float, str]]:
     match = LOG_LINE_RE.match(line)
     if not match:
         return None
-    return float(match.group(1)), match.group(2)
+    try:
+        elapsed_seconds = float(match.group(1))
+    except ValueError:
+        return None
+    return elapsed_seconds, match.group(2)
 
 
 class SerialCsiReader:
@@ -135,8 +139,9 @@ class SerialCsiReader:
         import serial  # imported here so importing csi_common never requires a serial port
 
         start_time = time.monotonic()
-        log_file = self.log_path.open("a", encoding="utf-8") if self.log_path else None
+        log_file = None
         try:
+            log_file = self.log_path.open("a", encoding="utf-8") if self.log_path else None
             with serial.Serial(self.port, baudrate=self.baud, timeout=0.1) as ser:
                 ser.reset_input_buffer()
                 while not self._stop_event.is_set():
@@ -160,7 +165,7 @@ class SerialCsiReader:
                         log_file.flush()
 
                     self.queue.put(("sample", (elapsed, sample)))
-        except serial.SerialException as exc:
+        except (serial.SerialException, OSError) as exc:
             self.queue.put(("error", str(exc)))
         finally:
             if log_file is not None:

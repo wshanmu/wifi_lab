@@ -113,6 +113,7 @@ class LiveCsiSmoothedPlot(QtWidgets.QWidget):
 
     def update(self) -> None:
         got_sample = False
+        got_error = False
 
         while True:
             try:
@@ -121,6 +122,7 @@ class LiveCsiSmoothedPlot(QtWidgets.QWidget):
                 break
 
             if kind == "error":
+                got_error = True
                 self.status_label.setText(f"Serial error: {payload}")
                 print(f"Serial error: {payload}", file=sys.stderr)
                 continue
@@ -169,11 +171,12 @@ class LiveCsiSmoothedPlot(QtWidgets.QWidget):
         right = max(self.args.window, x1)
         self.heatmap_plot.setXRange(max(0.0, right - self.args.window), right, padding=0)
 
-        self.status_label.setText(
-            f"samples {self.sample_count} | subcarriers {self.num_subcarriers} | "
-            f"moving average window {self.args.average_window} samples | "
-            f"selected sc{selected_index} raw {raw_trace[-1]:.2f}"
-        )
+        if not got_error:
+            self.status_label.setText(
+                f"samples {self.sample_count} | subcarriers {self.num_subcarriers} | "
+                f"moving average window {self.args.average_window} samples | "
+                f"selected sc{selected_index} raw {raw_trace[-1]:.2f}"
+            )
 
 
 def build_reader(args):
