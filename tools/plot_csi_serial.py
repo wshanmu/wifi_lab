@@ -70,6 +70,7 @@ class LiveCsiPlot(QtWidgets.QWidget):
 
     def update(self) -> None:
         got_sample = False
+        latest_sample = None
 
         while True:
             try:
@@ -99,6 +100,7 @@ class LiveCsiPlot(QtWidgets.QWidget):
             self.amplitude_history.append(amplitude)
             self.sample_count += 1
             got_sample = True
+            latest_sample = sample
 
         if not got_sample or not self.times:
             return
@@ -117,7 +119,6 @@ class LiveCsiPlot(QtWidgets.QWidget):
         right = max(self.args.window, x1)
         self.heatmap_plot.setXRange(max(0.0, right - self.args.window), right, padding=0)
 
-        _, latest_sample = payload
         self.status_label.setText(
             f"samples {self.sample_count} | subcarriers {self.num_subcarriers} | "
             f"selected sc{selected_index} amplitude {selected_trace[-1]:.2f} | "
