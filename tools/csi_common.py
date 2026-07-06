@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Shared CSI line parsing, serial reading, replay, and demo-signal helpers.
 
-Used by plot_csi_serial.py, plot_csi_smoothed_TODO.py, and
-csi_presence_detect.py so the tagged, variable-length CSI serial format
-is only parsed in one place.
+Used by plot_csi_serial.py and csi_presence_detect.py so the tagged,
+variable-length CSI serial format is only parsed in one place.
 """
 
 from __future__ import annotations

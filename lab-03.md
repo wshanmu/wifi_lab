@@ -6,7 +6,7 @@ parent: Labs
 nav_order: X
 ---
 
-# Lab X: WiFi CSI Sensing — Presence Detection **IoT**{: .label .label-iot }
+# Lab 3: WiFi CSI Sensing — Presence Detection **IoT**{: .label .label-iot }
 
 Date: TBD
 TA: TBD
@@ -45,22 +45,7 @@ Official/reference materials (TA to confirm final links before lab):
 - Espressif ESP-IDF flashing tools
 - Wireshark (used for the instructor demo only)
 
-## Environment Setup
 
-Complete the **[Environment Setup guide](environment-setup.md)** before lab day. It covers ESP-IDF installation, USB driver setup, Python virtual environment creation, and a final verification checklist. Estimated time: 30–60 minutes.
-
-TAs should circulate the setup guide at least a few days before the lab and offer an office-hours slot for students who get stuck. Ask students to confirm the verification checklist is passing before they arrive.
-
-## Group Roles
-
-Each group (3-4 students) should assign:
-
-- **Hardware lead:** connects boards, checks USB ports, labels TX/RX/sniffer.
-- **Firmware lead:** flashes firmware, records serial ports/baud rates.
-- **Experiment lead:** positions boards, manages presence test scenes.
-- **Data lead:** saves CSI logs, runs analysis notebooks, prepares final answers.
-
-Rotate roles between Part A and Part B if time allows.
 
 ## Before Lab
 
@@ -74,6 +59,72 @@ TA setup should prepare:
 - a fallback set of pre-recorded CSI logs (empty-room and motion scenes) that groups can replay with `csi_presence_detect.py --replay` if live capture fails;
 - a quiet area or physical partition per group to reduce CSI cross-talk between groups' links;
 - a few spare pre-flashed boards (one per role) so a group with a misbehaving board can swap rather than wait on a re-flash.
+
+## Environment Setup
+
+Complete the **[Environment Setup guide](environment-setup.md)** before lab day. It covers ESP-IDF installation, USB driver setup, Python virtual environment creation, and a final verification checklist. Estimated time: 30–60 minutes.
+
+TAs should circulate the setup guide at least a few days before the lab and offer an office-hours slot for students who get stuck. Ask students to confirm the verification checklist is passing before they arrive.
+
+## Lab Code
+
+Use the public IMU lab repository as the source of truth:
+
+[https://github.com/LuHaofan/wifi_lab](https://github.com/LuHaofan/wifi_lab)
+
+Clone it once:
+
+```bash
+git clone https://github.com/LuHaofan/wifi_lab.git
+cd wifi_lab
+```
+
+## Python Setup
+
+Open a terminal in the lab code folder:
+
+```bash
+cd wifi_lab/tools
+```
+
+Create a Python environment if you have not already done so.
+
+macOS/Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Find the ESP32 serial port.
+
+macOS:
+
+```bash
+ls /dev/cu.usb* /dev/cu.SLAB* /dev/cu.wch* 2>/dev/null
+```
+
+Windows:
+
+```text
+Open Device Manager -> Ports (COM & LPT), then look for the new COM port.
+```
+
+Use your actual port in the commands below. Examples:
+
+- macOS: `/dev/cu.usbserial-5B1F0080901`
+- Windows: `COM5`
 
 ---
 
@@ -117,33 +168,82 @@ Explain why WiFi CSI changes with environment, and how it could be used for sens
 
 *10-minute break. TAs use the remaining buffer to circulate and check any environment setup issues before hardware work begins.*
 
-### 1:05–2:00 — ESP32 Setup (softAP, Injector, Sniffer)
+### 1:05–2:00 — ESP32 Setup 
 
-1. Connect all three ESP32 boards by USB.
-2. Identify each board's serial port (COM on Windows; `/dev/ttyUSB*` or `/dev/ttyACM*` on Linux; `/dev/cu.*` on macOS).
-3. Flash the `softAP` firmware to the access-point board.
-4. Flash the `injector` firmware to the transmitter board.
-5. Flash the `sniffer` firmware to the receiver board.
-6. Open a serial monitor on the sniffer board at 115200 baud.
-7. With the injector transmitting, confirm the sniffer prints tagged CSI lines, e.g. `<timestamp>123456</timestamp><rssi>-42</rssi><address>AA:BB:BB:BB:BB:BB</address>0 3 4 0 ...`.
+#### SoftAP Setup
+0. Change dir to the softAP project:
+```
+cd softAP
+```
+1. Connect one ESP32 board by USB to the laptop (mark it as "AP")
+2. Identify its serial port (COM on Windows; `/dev/ttyUSB*` or `/dev/ttyACM*` on Linux; `/dev/cu.*` on macOS). Since there is only one board, the one you detect should be the right one. 
+![alt text](figures/image-2.png)
+3. Set the channel for the AP:
+In `main/sdkconfig.h` line 339,
+```
+#define CONFIG_ESP_WIFI_CHANNEL 1
+```
+modify the value `1` to any number between 1-12, and note it.
 
-Record:
+3. Build, flash and monitor: bring up command palette: `Ctrl + Shift + P`, search `Build, Flash and Start a Monitor on Your Device`. A termnial will pop up and starts working. When it's done, you will see the following message in the terminal:
+![alt text](figures/image-4.png)
 
-| Board | Role | Serial Port | Firmware Image |
-| --- | --- | --- | --- |
-| Board A | softAP (access point) |  |  |
-| Board B | injector (TX) |  |  |
-| Board C | sniffer (CSI receiver) |  |  |
+4. Note the channel is `1`, and MAC address: `ac:a7:04:c0:9b:89`. Yours will be different.
+
+**Question 1**: Your AP's MAC address is:
+
+**Question 2**: Your AP's channel is:
+
+5. AP is now setup, you can unplug it from your laptop, and put it on power at a power outlet.
+
+#### Injector Setup
+0. Change dir to the injector project:
+```
+cd ../injector
+```
+1. Connect another ESP32 boards by USB (mark it as "injector").
+2. Identify the board's serial port.
+3. Set the MAC Address. In `main/injector.c`, change the MAC addresses in the packet:
+![alt text](figures/image-3.png)
+4-9, 16-21 must be the same and match the AP's MAC address noted above.
+10-15 can be any 6-byte address. Please come up with something unique, and take a note of the one your select:
+![alt text](figures/image-5.png)
+4. Set the channel. In `main/injector.c` line 51, change the first number of the channel number you selected above.
+```
+ESP_ERROR_CHECK(esp_wifi_set_channel(<channel number you selected>, 0));
+```
+5. Build, Flash and Monitor the `injector` firmware to the board. When it's done, in the terminal, you will see:
+![alt text](figures/image-6.png)
+
+**Question 3:** the injector's *fake* MAC address is:
+
+6. Injector is now setup, you can unplug it from your laptop, and put it on power at a power outlet.
+
+#### Sniffer Setup
+0. Change dir to the sniffer project:
+```
+cd ../sniffer
+```
+1. Connect another ESP32 boards by USB (mark it as "injector").
+2. Identify the board's serial port.
+3. Set the MAC Address. In `main/sniffer.c` line 13, change the MAC addresses to the fake address you selected:
+```
+#define INJECTOR_SPOOFED_MAC "AA:BB:BB:BB:BB:BB"
+```
+4. Set the channel. In `main/sniffer.c` line 79, change the first number of the channel number you selected above.
+```
+ESP_ERROR_CHECK(esp_wifi_set_channel(<channel_number_you_selected>, 0)); // <-- Change the channel
+```
+4. Build, Flash and Monitor. the `sniffer` firmware to the board.When it's done, in the terminal, you will see:
+![alt text](figures/image-7.png)
 
 Checkpoint: show the TA one live CSI output line on the sniffer's serial monitor before moving on.
 
-> **Key takeaway:** The same board takes on a different role purely from its firmware. The three-board architecture is a deliberate sensing design: the softAP anchors the WiFi link, the injector transmits the stimulus frames, and the sniffer passively captures how the environment shaped them (CSI) — without disrupting the link.
-
 ---
 
-## Part B: CSI Extraction and Presence Detection
+## Part B: CSI Analysis and Presence Detection
 
-This part uses the `tools/` scripts (a TA-provided Jupyter notebook is an optional alternative). If live capture is not working for a group, replay a fallback CSI log with `csi_presence_detect.py --replay <file>` and continue with analysis only.
+This part uses the `tools/` scripts. If live capture is not working for a group, replay a fallback CSI log with `csi_presence_detect.py --replay <file>` and continue with analysis only.
 
 ### 2:00–2:50 — CSI Extraction and Visualization
 
@@ -161,15 +261,10 @@ Collect two short scenes (30 seconds each):
 | motion | a student walks or waves an arm near the TX–RX link |
 
 Look at:
-
-- one CSI amplitude profile — amplitude across all subcarriers at a single static snapshot (read a column of the heatmap, or one row of a parsed log);
 - amplitude over time for one subcarrier, with the static and motion periods visible — pick a subcarrier in `plot_csi_serial.py`'s dropdown and watch its bottom-panel trace.
 
-Discussion prompts:
 
-- Which subcarriers show the most variation when someone moves?
-- Does amplitude or phase look noisier in your setup?
-- What do you think causes the variation you still see during the static scene?
+**Question 4:** Which subcarriers show the most variation when someone moves?
 
 > **Key takeaway:** Motion shows up as variance — the signal wiggles more when something moves near the TX–RX link, even if RSSI barely changes. Visualizing CSI turns an abstract matrix of numbers into something you can directly see and interpret.
 
@@ -227,7 +322,6 @@ Compare presence detection performance and threshold choices across groups. Disc
 
 Discussion prompts:
 
-- Which group had the cleanest separation between empty and presence scenes? Why do you think that was?
 - If you were deploying this in a real building, what would you worry about?
 - What would you change about the setup to make the detector more robust?
 
@@ -246,9 +340,7 @@ Submit one short report per group with:
 
 ---
 
-## What to Conclude
-
-A strong conclusion should mention:
+## Conclusion
 
 - CSI carries richer information than RSSI because it reports per-subcarrier amplitude and phase, making it sensitive to fine-grained changes in the environment.
 - Human presence and motion can be detected from CSI using simple variance/energy thresholding — no cameras, no wearables, no direct contact with the person.
@@ -295,11 +387,3 @@ The idea: when a person sits very still near the TX–RX link, their breathing c
 > **Key takeaway:** The wireless channel is sensitive enough to detect a chest rising and falling from meters away. The same physics that causes WiFi signals to bounce off walls also makes them a surprisingly capable contactless biosensor.
 
 ---
-
-## Further Extension Ideas
-
-- try presence detection using phase variance instead of amplitude variance;
-- test how detection accuracy changes as the person moves farther from the direct TX–RX path;
-- attempt a coarse gesture classification (hand wave vs. no motion) using the same variance pipeline;
-- explore whether changing the WiFi channel affects CSI sensitivity;
-- test whether your presence detector still works when other people are moving in the background.
