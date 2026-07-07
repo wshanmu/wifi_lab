@@ -84,3 +84,4 @@ Desktop.ini
 *.pptx
 .claude/
 .vscode/
+.devcontainer/

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import queue
+import signal
 import sys
 from collections import deque
 
@@ -16,10 +17,11 @@ from csi_common import DemoCsiReader, SerialCsiReader, iq_to_amplitude
 
 
 class LiveCsiPlot(QtWidgets.QWidget):
-    def __init__(self, args, data_queue):
+    def __init__(self, args, data_queue, on_close=None):
         super().__init__()
         self.args = args
         self.data_queue = data_queue
+        self._on_close = on_close
         self.start_time = None
         self.sample_count = 0
         self.num_subcarriers = None
@@ -62,6 +64,11 @@ class LiveCsiPlot(QtWidgets.QWidget):
 
         self.status_label = QtWidgets.QLabel("Waiting for CSI samples...")
         layout.addWidget(self.status_label)
+
+    def closeEvent(self, event) -> None:
+        if self._on_close is not None:
+            self._on_close()
+        event.accept()
 
     def _on_subcarrier_changed(self, index: int) -> None:
         if index < 0:
@@ -132,17 +139,22 @@ class LiveCsiPlot(QtWidgets.QWidget):
 def build_reader(args):
     if args.demo_signal:
         return DemoCsiReader()
-    return SerialCsiReader(args.port, args.baud)
+    return SerialCsiReader(args.port, args.baud, reset_on_connect=not args.no_reset_on_connect)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Live plot ESP32 CSI amplitude (heatmap + selected subcarrier).")
-    parser.add_argument("--port", default=None, help="Serial port, e.g. COM5")
+    parser.add_argument("--port", default=None, help="Serial port, e.g. COM5 or /dev/cu.usbserial-2140")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--window", type=float, default=10.0, help="Seconds of data to keep visible")
     parser.add_argument("--max-samples", type=int, default=2000, help="Maximum samples kept in memory")
     parser.add_argument("--fps", type=float, default=20.0, help="Plot refresh rate")
     parser.add_argument("--demo-signal", action="store_true", help="Use generated CSI-like data instead of serial input")
+    parser.add_argument(
+        "--no-reset-on-connect",
+        action="store_true",
+        help="Do not pulse ESP32 reset lines when opening the serial port",
+    )
     args = parser.parse_args()
 
     if args.window <= 0.0:
@@ -156,19 +168,43 @@ def main():
     reader.start()
 
     app = QtWidgets.QApplication(sys.argv)
-    window = LiveCsiPlot(args, reader.queue)
+    timer = QtCore.QTimer()
+    signal_timer = QtCore.QTimer()
+    cleaned_up = False
+
+    def cleanup():
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
+        timer.stop()
+        signal_timer.stop()
+        reader.stop()
+
+    def request_exit(signum, _frame):
+        app.exit(130 if signum == signal.SIGINT else 143)
+
+    signal.signal(signal.SIGINT, request_exit)
+    signal.signal(signal.SIGTERM, request_exit)
+
+    signal_timer.timeout.connect(lambda: None)
+    signal_timer.start(100)
+
+    window = LiveCsiPlot(args, reader.queue, on_close=cleanup)
     window.show()
 
-    timer = QtCore.QTimer()
     timer.timeout.connect(window.update)
     timer.start(max(1, int(1000 / args.fps)))
 
-    def cleanup():
-        timer.stop()
-        reader.stop()
-
     app.aboutToQuit.connect(cleanup)
-    sys.exit(app.exec())
+    exit_code = 0
+    try:
+        exit_code = app.exec()
+    except KeyboardInterrupt:
+        exit_code = 130
+    finally:
+        cleanup()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

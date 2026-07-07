@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import collections
 import queue
+import signal
 import sys
 from collections import deque
 
@@ -61,11 +62,12 @@ class MotionDetector:
 
 
 class PresenceDetectorWindow(QtWidgets.QWidget):
-    def __init__(self, args, data_queue, detector):
+    def __init__(self, args, data_queue, detector, on_close=None):
         super().__init__()
         self.args = args
         self.data_queue = data_queue
         self.detector = detector
+        self._on_close = on_close
         self.start_time = None
         self.sample_count = 0
         self.num_subcarriers = None
@@ -102,6 +104,11 @@ class PresenceDetectorWindow(QtWidgets.QWidget):
 
         self.detail_label = QtWidgets.QLabel("")
         layout.addWidget(self.detail_label)
+
+    def closeEvent(self, event) -> None:
+        if self._on_close is not None:
+            self._on_close()
+        event.accept()
 
     def update(self) -> None:
         got_sample = False
@@ -169,17 +176,27 @@ def build_reader(args):
         return DemoCsiReader()
     if args.replay:
         return ReplayCsiReader(args.replay, speed=args.replay_speed)
-    return SerialCsiReader(args.port, args.baud, log_path=args.log)
+    return SerialCsiReader(
+        args.port,
+        args.baud,
+        log_path=args.log,
+        reset_on_connect=not args.no_reset_on_connect,
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(description="WiFi CSI presence/motion detector (online + offline).")
-    parser.add_argument("--port", default=None, help="Serial port for live detection, e.g. COM5")
+    parser.add_argument("--port", default=None, help="Serial port for live detection, e.g. COM5 or /dev/cu.usbserial-2140")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--log", default=None, help="Path to record raw CSI lines for later --replay")
     parser.add_argument("--replay", default=None, help="Replay a log file recorded with --log instead of live serial")
     parser.add_argument("--replay-speed", type=float, default=1.0, help="Replay pacing multiplier; 0 = as fast as possible")
     parser.add_argument("--demo-signal", action="store_true", help="Use generated CSI-like data instead of serial/replay input")
+    parser.add_argument(
+        "--no-reset-on-connect",
+        action="store_true",
+        help="Do not pulse ESP32 reset lines when opening the serial port",
+    )
     parser.add_argument("--window-size", type=int, default=20, help="Number of packets in the motion detector's sliding window")
     parser.add_argument("--threshold", type=float, default=2.0, help="Motion score threshold")
     parser.add_argument("--max-samples", type=int, default=500, help="Maximum samples kept in memory for the score plot")
@@ -200,19 +217,43 @@ def main():
     detector = MotionDetector(window_size=args.window_size, threshold=args.threshold)
 
     app = QtWidgets.QApplication(sys.argv)
-    window = PresenceDetectorWindow(args, reader.queue, detector)
+    timer = QtCore.QTimer()
+    signal_timer = QtCore.QTimer()
+    cleaned_up = False
+
+    def cleanup():
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
+        timer.stop()
+        signal_timer.stop()
+        reader.stop()
+
+    def request_exit(signum, _frame):
+        app.exit(130 if signum == signal.SIGINT else 143)
+
+    signal.signal(signal.SIGINT, request_exit)
+    signal.signal(signal.SIGTERM, request_exit)
+
+    signal_timer.timeout.connect(lambda: None)
+    signal_timer.start(100)
+
+    window = PresenceDetectorWindow(args, reader.queue, detector, on_close=cleanup)
     window.show()
 
-    timer = QtCore.QTimer()
     timer.timeout.connect(window.update)
     timer.start(max(1, int(1000 / args.fps)))
 
-    def cleanup():
-        timer.stop()
-        reader.stop()
-
     app.aboutToQuit.connect(cleanup)
-    sys.exit(app.exec())
+    exit_code = 0
+    try:
+        exit_code = app.exec()
+    except KeyboardInterrupt:
+        exit_code = 130
+    finally:
+        cleanup()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

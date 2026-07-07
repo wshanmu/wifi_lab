@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import queue
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -115,14 +116,27 @@ class SerialCsiReader:
         baud: int,
         log_path: Optional[str] = None,
         on_unparsed: Optional[Callable[[str], None]] = None,
+        reset_on_connect: bool = True,
     ):
-        self.port = port
+        self.port = self._macos_callout_port(port)
         self.baud = baud
         self.log_path = Path(log_path) if log_path else None
         self.on_unparsed = on_unparsed
+        self.reset_on_connect = reset_on_connect
         self.queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._serial_lock = threading.Lock()
+        self._serial = None
+
+    @staticmethod
+    def _macos_callout_port(port: str) -> str:
+        """Prefer /dev/cu.* over /dev/tty.* for outgoing serial on macOS."""
+        if sys.platform == "darwin" and port.startswith("/dev/tty."):
+            callout_port = "/dev/cu." + port.removeprefix("/dev/tty.")
+            if Path(callout_port).exists():
+                return callout_port
+        return port
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -130,43 +144,125 @@ class SerialCsiReader:
 
     def stop(self) -> None:
         self._stop_event.set()
+        with self._serial_lock:
+            ser = self._serial
+        if ser is not None:
+            try:
+                ser.cancel_read()
+            except Exception:
+                pass
         if self._thread is not None:
             self._thread.join(timeout=2)
+            if self._thread.is_alive():
+                with self._serial_lock:
+                    ser = self._serial
+                self._close_serial(ser)
+                self._thread.join(timeout=1)
             self._thread = None
+
+    def _open_serial(self, serial_module):
+        ser = serial_module.Serial(
+            port=None,
+            baudrate=self.baud,
+            timeout=0.1,
+            write_timeout=0.1,
+            rtscts=False,
+            dsrdtr=False,
+        )
+        ser.dtr = False
+        ser.rts = False
+        ser.port = self.port
+        ser.open()
+        self._disable_hangup_on_close(ser)
+        self._set_idle_control_lines(ser)
+        return ser
+
+    def _disable_hangup_on_close(self, ser) -> None:
+        try:
+            import termios
+
+            attrs = termios.tcgetattr(ser.fileno())
+            attrs[2] &= ~termios.HUPCL
+            termios.tcsetattr(ser.fileno(), termios.TCSANOW, attrs)
+        except Exception:
+            pass
+
+    def _set_idle_control_lines(self, ser) -> None:
+        try:
+            # ESP32 auto-reset boards expect EN and GPIO0 to sit high while
+            # the app runs. With pyserial, inactive DTR/RTS is the idle state.
+            ser.dtr = False
+            ser.rts = False
+        except Exception:
+            pass
+
+    def _reset_esp32_into_app(self, ser) -> None:
+        try:
+            ser.dtr = False  # GPIO0 high: normal boot, not bootloader.
+            ser.rts = True   # EN low: hold reset.
+            time.sleep(0.1)
+            ser.rts = False  # EN high: run app.
+            time.sleep(1.5)
+            self._set_idle_control_lines(ser)
+        except Exception:
+            pass
+
+    def _close_serial(self, ser) -> None:
+        if ser is None:
+            return
+        self._set_idle_control_lines(ser)
+        try:
+            ser.close()
+        except Exception:
+            pass
 
     def _run(self) -> None:
         import serial  # imported here so importing csi_common never requires a serial port
 
         start_time = time.monotonic()
         log_file = None
+        ser = None
         try:
             log_file = self.log_path.open("a", encoding="utf-8") if self.log_path else None
-            with serial.Serial(self.port, baudrate=self.baud, timeout=0.1) as ser:
-                ser.reset_input_buffer()
-                while not self._stop_event.is_set():
-                    raw = ser.readline()
-                    if not raw:
-                        continue
+            ser = self._open_serial(serial)
+            with self._serial_lock:
+                self._serial = ser
 
-                    line = raw.decode("utf-8", errors="replace").strip()
-                    if not line:
-                        continue
+            if self.reset_on_connect:
+                self._reset_esp32_into_app(ser)
+            if self._stop_event.is_set():
+                return
 
-                    sample = parse_csi_line(line)
-                    if sample is None:
-                        if self.on_unparsed is not None:
-                            self.on_unparsed(line)
-                        continue
+            ser.reset_input_buffer()
+            while not self._stop_event.is_set():
+                raw = ser.readline()
+                if not raw:
+                    continue
 
-                    elapsed = time.monotonic() - start_time
-                    if log_file is not None:
-                        log_file.write(format_log_line(elapsed, line) + "\n")
-                        log_file.flush()
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
 
-                    self.queue.put(("sample", (elapsed, sample)))
+                sample = parse_csi_line(line)
+                if sample is None:
+                    if self.on_unparsed is not None:
+                        self.on_unparsed(line)
+                    continue
+
+                elapsed = time.monotonic() - start_time
+                if log_file is not None:
+                    log_file.write(format_log_line(elapsed, line) + "\n")
+                    log_file.flush()
+
+                self.queue.put(("sample", (elapsed, sample)))
         except (serial.SerialException, OSError) as exc:
-            self.queue.put(("error", str(exc)))
+            if not self._stop_event.is_set():
+                self.queue.put(("error", str(exc)))
         finally:
+            with self._serial_lock:
+                if self._serial is ser:
+                    self._serial = None
+            self._close_serial(ser)
             if log_file is not None:
                 log_file.close()
 
