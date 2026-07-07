@@ -82,6 +82,7 @@ Desktop.ini
 
 *.pdf
 *.pptx
+docs/
 .claude/
 .vscode/
 .devcontainer/
