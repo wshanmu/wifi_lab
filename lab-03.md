@@ -18,7 +18,7 @@ Hardware: three ESP32 boards per group: `softAP`, `injector`, and `sniffer`
 By the end of this lab, each group should be able to:
 
 - explain WiFi frames, channels, RSSI, OFDM subcarriers, and channel state information (CSI);
-- use Wireshark to inspect a captured WiFi packet trace;
+- optionally use Wireshark to inspect a captured WiFi packet trace;
 - flash or verify three ESP32 firmware roles: access point, frame injector, and CSI sniffer;
 - identify and record ESP32 serial ports, MAC addresses, and WiFi channels;
 - visualize CSI amplitude over time and across subcarriers;
@@ -66,19 +66,68 @@ sniffer captures CSI from those frames and streams it over USB serial
 
 CSI is richer than RSSI. RSSI is one received-power number. CSI gives amplitude and phase information for many OFDM subcarriers, so it changes when people move and alter the multipath reflections in the room.
 
+## Hardware and Board Roles
+
+Each group will use three ESP32-based boards. An ESP32 is a WiFi/Bluetooth microcontroller. A microcontroller, or MCU, is a small computer designed to run firmware directly, control hardware pins, talk to sensors, and react to events in real time.
+
+| Role | Board | ESP-IDF target | Purpose |
+| --- | --- | --- | --- |
+| `softAP` | [M5Stack Core2 ESP32 IoT Development Kit](https://shop.m5stack.com/products/m5stack-core2-esp32-iot-development-kit) | `esp32` | Creates the WiFi access point and fixes the channel used by the lab. |
+| `sniffer` | [ESP32-CAM](https://lastminuteengineers.com/getting-started-with-esp32-cam/) | `esp32` | Captures packets in promiscuous mode and streams CSI over USB serial. |
+| `injector` | [ESP32-C3-Mini](https://www.amazon.com/ESP32-C3-Development-Bluetooth-Single-Core-Processor/dp/B0D4QD19BB) | `esp32c3` | Sends repeated 802.11 frames that create a controllable CSI signal source. |
+
+Use the ESP32-CAM as the sniffer unless a TA tells you otherwise. The current sniffer firmware and CSI data path are tested on the classic ESP32 target, not on the ESP32-C3-Mini.
+
 ## Before You Start
 
 Each group should have:
 
-- one ESP32 labeled `softAP`;
-- one ESP32 labeled `injector`;
-- one ESP32 labeled `sniffer`;
+- one board labeled `softAP`;
+- one board labeled `injector`;
+- one board labeled `sniffer`;
 - USB data cables, not charge-only cables;
 - VS Code with the ESP-IDF extension installed;
-- Python 3.10+ and the packages in `tools/requirements.txt`;
-- Wireshark installed.
+- the `cosmos-ds` Conda environment from Lab 1;
+- the WiFi lab repository cloned locally.
 
 If the boards are already pre-flashed by the TA, still read the firmware steps so you understand what each board is doing. You may only need to verify the serial output.
+
+## ESP-IDF Setup
+
+ESP-IDF is Espressif's official toolchain for building, flashing, and monitoring ESP32 firmware. Set it up in this lab; the same setup will also be useful for later ESP32 labs.
+
+1. Install or update [Visual Studio Code](https://code.visualstudio.com/).
+2. In VS Code, install the official **ESP-IDF** extension.
+3. Open the command palette:
+   - macOS: `Command+Shift+P`
+   - Windows/Linux: `Ctrl+Shift+P`
+4. Run `ESP-IDF: Open ESP-IDF Installation Manager`.
+5. Install ESP-IDF and its tools using the installer.
+6. Run `ESP-IDF: Select Current ESP-IDF Version`.
+7. Run `ESP-IDF: Doctor Command` and fix any reported setup issues.
+
+When flashing a board, open that board's firmware folder in VS Code and select the correct target:
+
+| Folder | Board role | Target |
+| --- | --- | --- |
+| `softAP/` | M5Stack Core2 SoftAP | `esp32` |
+| `injector/` | ESP32-C3-Mini injector | `esp32c3` |
+| `sniffer/` | ESP32-CAM sniffer | `esp32` |
+
+Then run:
+
+1. `ESP-IDF: Select Port to Use`.
+2. `ESP-IDF: Build your Project`.
+3. `ESP-IDF: Flash your Project`.
+4. `ESP-IDF: Monitor your Device`.
+
+Do not erase flash or overwrite code outside the lab repository unless a TA asks you to.
+
+Official references:
+
+- [ESP-IDF Extension for VS Code installation guide](https://docs.espressif.com/projects/vscode-esp-idf-extension/en/latest/installation.html)
+- [ESP-IDF Get Started guide for ESP32](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html)
+- [ESP-IDF Get Started guide for ESP32-C3](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/get-started/index.html)
 
 ## Python Tool Setup
 
@@ -88,25 +137,14 @@ Open a terminal in the repository:
 cd wifi_lab
 ```
 
-Create and activate a Python environment.
-
-macOS/Linux:
+Activate the Conda environment from Lab 1 and install the WiFi lab packages:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
+conda activate cosmos-ds
 python -m pip install -r tools/requirements.txt
 ```
 
-Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r tools\requirements.txt
-```
+If `conda activate cosmos-ds` fails, return to Lab 1 and create the course environment before continuing.
 
 Check the plotting tool without hardware:
 
@@ -123,7 +161,7 @@ Use your actual serial port in later commands.
 macOS:
 
 ```bash
-ls /dev/cu.usb* /dev/cu.SLAB* /dev/cu.wch* 2>/dev/null
+ls /dev/cu.* 2>/dev/null
 ```
 
 Linux:
@@ -163,25 +201,14 @@ The TA will introduce:
 
 Key idea: when a person moves near the injector-sniffer link, the wireless channel changes. That motion can show up as higher CSI variance.
 
-### 1:25-1:45 PM - Wireshark Frame Demo
+### 1:25-1:45 PM - ESP-IDF and Board Check
 
-Open the example capture:
+Before flashing, each group should:
 
-```bash
-wireshark wireshark_example.pcap
-```
-
-If that command does not work, open Wireshark first and use **File > Open**.
-
-Find one beacon or data frame and inspect:
-
-- frame type;
-- source MAC address;
-- destination MAC address;
-- sequence number;
-- channel or radio metadata if available.
-
-Checkpoint question: what information is in the packet header before the actual data payload?
+1. Confirm VS Code can see the ESP-IDF extension commands.
+2. Connect one board at a time and find its serial port.
+3. Confirm the correct target for each firmware folder: `esp32` for `softAP/`, `esp32c3` for `injector/`, and `esp32` for `sniffer/`.
+4. Decide which group channel to use. Use channel `1` unless the TA assigns another channel.
 
 ### 1:45-2:25 PM - Configure or Verify the SoftAP Board
 
@@ -217,6 +244,8 @@ Record:
 | WiFi channel |  |
 
 After the SoftAP is running, it can be powered from a USB power adapter.
+
+SoftAP verification: use a phone or laptop to scan for the SoftAP SSID. You do not need to connect to the internet through it. Just confirm that the SSID appears and record the channel shown in the monitor output.
 
 ### 2:25-3:00 PM - Configure or Verify the Injector Board
 
@@ -313,6 +342,13 @@ Try these scenes:
 
 Question: which subcarriers visibly change when someone moves?
 
+Some subcarriers may look zero, invalid, or almost static. This is expected. The CSI buffer includes values from different long training fields, and the useful subcarrier range depends on packet type, bandwidth, and driver configuration. Some indices can also be guard/DC/pilot-related positions or invalid hardware words. Focus your detector on the subcarriers that respond clearly to motion instead of assuming every index is equally useful.
+
+Useful reading:
+
+- [Espressif Wi-Fi Channel State Information](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/wifi-driver/wifi-vendor-features.html#wi-fi-channel-state-information)
+- [Espressif Wi-Fi CSI configuration steps](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/wifi-driver/wifi-vendor-features.html#wi-fi-channel-state-information-configure)
+
 ### 3:50-4:35 PM - Presence Detection Coding Task
 
 Open:
@@ -332,18 +368,6 @@ The intended logic is:
 5. Average those variances into one motion score.
 6. Return `motion = score > self.threshold`.
 
-Useful Python outline:
-
-```python
-if len(self.history) < 2:
-    return {"score": 0.0, "motion": False}
-
-matrix = np.stack(self.history, axis=0)
-per_subcarrier_variance = np.var(matrix, axis=0)
-score = float(np.mean(per_subcarrier_variance))
-return {"score": score, "motion": score > self.threshold}
-```
-
 Run live:
 
 ```bash
@@ -362,7 +386,7 @@ Experiment:
 - raise the threshold and watch for missed motion;
 - change `--window-size` and observe latency vs. stability.
 
-### 4:35-5:00 PM - Checkoff and Discussion
+### 4:35-5:00 PM - Checkoff and Optional Wireshark Demo
 
 Show the TA:
 
@@ -372,6 +396,32 @@ Show the TA:
 4. Live CSI heatmap or demo-signal plot.
 5. Presence detector running with your completed `MotionDetector.update()`.
 6. One threshold/window setting that worked reasonably well.
+
+If time remains, the TA may show a Wireshark packet capture demo on the instructor laptop.
+
+To inspect the provided example capture yourself, install [Wireshark](https://www.wireshark.org/download.html), then open:
+
+```bash
+wireshark wireshark_example.pcap
+```
+
+If that command does not work, open Wireshark first and use **File > Open**.
+
+Find one beacon or data frame and inspect:
+
+- frame type;
+- source MAC address;
+- destination MAC address;
+- sequence number;
+- channel or radio metadata if available.
+
+Optional live capture: on Linux, with a compatible WiFi adapter and permission to monitor the local lab channel, you can run:
+
+```bash
+sudo ./wifi_monitor_capture.sh wlan0 1
+```
+
+Replace `wlan0` and `1` with your wireless interface and lab channel. Only capture traffic on networks and spectrum you are authorized to monitor.
 
 ## Deliverables
 
@@ -395,7 +445,7 @@ Submit one short group note with:
 | Flash fails | Wrong target, wrong port, or board not in bootloader mode | Select the right port; hold BOOT during connect if needed; ask a TA before erasing. |
 | Sniffer prints no CSI | MAC filter or channel mismatch | Confirm injector fake MAC and channel match the sniffer configuration. |
 | Live plot opens but stays blank | Wrong serial port or sniffer not streaming | Recheck `SNIFFER_PORT` and monitor output. |
-| PyQt/PyQtGraph error | Python packages missing | Activate the environment and run `python -m pip install -r tools/requirements.txt`. |
+| PyQt/PyQtGraph error | Python packages missing | Activate `cosmos-ds` and run `python -m pip install -r tools/requirements.txt`. |
 | Detector never triggers | Threshold too high or too little motion near link | Lower `--threshold`, move closer to the injector-sniffer path, or increase motion. |
 | Detector always triggers | Threshold too low or noisy environment | Raise `--threshold`, reduce nearby movement, or reposition boards. |
 

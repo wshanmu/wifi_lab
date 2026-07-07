@@ -87,12 +87,22 @@ If you see `Failed to connect`, hold the **BOOT** button on the board while runn
 
 ## Part 2: Python Environment Setup
 
-This part is the same on Windows, macOS, and Linux, except for how you open the terminal and activate the virtual environment.
+Use the `cosmos-ds` Conda environment from Lab 1. Keeping the same environment across the data science and IoT labs avoids duplicate package installs and makes VS Code/Jupyter kernel selection simpler.
 
-- **Windows:** use the **ESP-IDF terminal** opened by the installer (or any terminal where Python 3.10+ is accessible).
-- **macOS/Linux:** use any Terminal window. If you need `esptool.py` or `idf.py` in the same session, activate the ESP-IDF environment first as described in the official guide.
+#### Step 1 — Activate the course environment
 
-#### Step 1 — Confirm Python version
+```bash
+conda activate cosmos-ds
+```
+
+If this fails, create the environment:
+
+```bash
+conda create -n cosmos-ds python=3.11
+conda activate cosmos-ds
+```
+
+#### Step 2 — Confirm Python version
 
 ```bash
 python --version
@@ -104,64 +114,22 @@ or, on some systems:
 python3 --version
 ```
 
-You need Python **3.10 or newer**. If your version is older, download a newer installer from [https://www.python.org/downloads/](https://www.python.org/downloads/).
+You need Python **3.10 or newer**. Python 3.11 is recommended for this course.
 
-> On Windows, if `python` is not found, open the Microsoft Store and search for Python 3.11 or 3.12, or re-run the ESP-IDF installer and ensure the Python component is checked.
-
-#### Step 2 — Create a virtual environment
-
-A virtual environment keeps the lab packages separate from your system Python, so they do not conflict with anything else you have installed.
+#### Step 3 — Upgrade pip
 
 ```bash
-python -m venv csi-lab
+python -m pip install --upgrade pip
 ```
 
-This creates a folder called `csi-lab` in your current directory containing an isolated Python installation.
-
-#### Step 3 — Activate the virtual environment
-
-**Windows (PowerShell):**
-
-```powershell
-csi-lab\Scripts\Activate.ps1
-```
-
-If you see a script execution policy error, run this first:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-Then try activating again.
-
-**Windows (Command Prompt):**
-
-```cmd
-csi-lab\Scripts\activate.bat
-```
-
-**macOS/Linux:**
-
-```bash
-source csi-lab/bin/activate
-```
-
-After activation, your terminal prompt should show `(csi-lab)` at the start, confirming the environment is active. All `pip install` commands from this point install only into this environment.
-
-#### Step 4 — Upgrade pip
-
-```bash
-pip install --upgrade pip
-```
-
-#### Step 5 — Install the lab's Python packages
+#### Step 4 — Install the lab's Python packages
 
 The analysis tools live in the course repository under `tools/`, and their exact
 versions are pinned in `tools/requirements.txt`. From inside your cloned copy of
-the lab repo, with the environment active, install them:
+the lab repo, with `cosmos-ds` active, install them:
 
 ```bash
-pip install -r tools/requirements.txt
+python -m pip install -r tools/requirements.txt
 ```
 
 This installs:
@@ -177,7 +145,7 @@ If you do not have the repo yet, ask your TA for the clone URL, or install the
 same packages directly:
 
 ```bash
-pip install "numpy" "pyserial" "pyqtgraph" "PyQt6<6.11"
+python -m pip install "numpy" "pyserial" "pyqtgraph" "PyQt6<6.11"
 ```
 
 **Optional — breathing-rate extension:** the after-class breathing extension
@@ -185,19 +153,19 @@ also uses `scipy` (bandpass filter + FFT). Install it only if you attempt that
 section:
 
 ```bash
-pip install scipy
+python -m pip install scipy
 ```
 
 **Optional — Jupyter notebooks:** if your TA provides analysis notebooks, also
 install:
 
 ```bash
-pip install jupyter matplotlib
+python -m pip install jupyter matplotlib
 ```
 
 Installation typically takes 2–5 minutes.
 
-#### Step 6 — Verify the packages
+#### Step 5 — Verify the packages
 
 ```bash
 python -c "import numpy, serial, pyqtgraph; from PyQt6 import QtWidgets; print('All packages OK')"
@@ -209,7 +177,7 @@ Expected output:
 All packages OK
 ```
 
-#### Step 7 — Confirm the tools run (no hardware needed)
+#### Step 6 — Confirm the tools run (no hardware needed)
 
 The plotting tools include a built-in synthetic signal, so you can verify your
 setup before lab day without any board attached. From the repo root:
@@ -230,7 +198,7 @@ window to exit.
 
 ## Part 3: Wireshark
 
-Wireshark is used only for the instructor-led demo at the start of the lab. You will open a pre-captured `.pcap` file — no live capture or monitor-mode setup is needed.
+Wireshark is optional for students. The TA may show the packet demo on the instructor laptop, and you can still inspect the provided `wireshark_example.pcap` if you install Wireshark locally. No live capture or monitor-mode setup is required for the main lab.
 
 #### Windows
 

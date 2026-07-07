@@ -42,8 +42,8 @@ plain Python project and does not participate in the ESP-IDF build.
 Students should start with the two guides at the repo root:
 
 1. [`environment-setup.md`](environment-setup.md) — complete **before lab day**:
-   installs ESP-IDF, USB drivers, the Python environment (from
-   [`tools/requirements.txt`](tools/requirements.txt)), and Wireshark.
+   installs ESP-IDF, USB drivers, the course Conda environment packages (from
+   [`tools/requirements.txt`](tools/requirements.txt)), and optional Wireshark.
 2. [`lab-03.md`](lab-03.md) — the lab itself: flash
    the three boards, visualize CSI with the `tools/`, and implement the
    variance-threshold presence detector.
@@ -54,7 +54,8 @@ Each module builds and flashes independently. From a module directory with the
 ESP-IDF environment active:
 
 ```bash
-idf.py set-target esp32        # softAP uses esp32c3; sniffer and injector use esp32
+idf.py set-target esp32        # softAP and sniffer
+idf.py set-target esp32c3      # injector
 idf.py build
 idf.py -p YOUR_PORT flash monitor
 ```
@@ -72,10 +73,10 @@ See [`tools/README.md`](tools/README.md) for full instructions. In brief, from
 `tools/`:
 
 ```bash
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r requirements.txt   # Windows
-python plot_csi_serial.py --port YOUR_PORT                     # live CSI plot
-python csi_presence_detect.py --port YOUR_PORT --log run1.txt  # motion detection + logging
+conda activate cosmos-ds
+python -m pip install -r requirements.txt
+python plot_csi_serial.py --port YOUR_PORT
+python csi_presence_detect.py --port YOUR_PORT --log run1.txt
 ```
 
 All tools accept `--demo-signal` to run without hardware.
